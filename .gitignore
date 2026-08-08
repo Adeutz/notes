@@ -1,0 +1,10 @@
+# This repo is published to the public web.
+# Nothing but the encrypted app belongs here.
+*.csv
+*.xlsx
+*.xls
+*.pdf
+mortgage-plan-offline.html
+*-offline.html
+.DS_Store
+Thumbs.db
