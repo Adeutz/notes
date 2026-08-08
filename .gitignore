@@ -6,5 +6,6 @@
 *.pdf
 mortgage-plan-offline.html
 *-offline.html
+index.html.bak
 .DS_Store
 Thumbs.db
