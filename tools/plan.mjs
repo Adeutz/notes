@@ -3,6 +3,7 @@
  * plan.mjs — open and re-seal the encrypted plan.
  *
  *   node tools/plan.mjs decrypt   -> index.html  ->  mortgage-plan-offline.html
+ *   node tools/plan.mjs preview   -> a browsable copy, no passphrase needed
  *   node tools/plan.mjs encrypt   -> mortgage-plan-offline.html  ->  index.html
  *
  * The passphrase is typed at the prompt and never written to disk, never
@@ -25,6 +26,8 @@ const ITER = 250000;
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const SHELL = join(ROOT, 'index.html');
 const PLAIN = join(ROOT, 'mortgage-plan-offline.html');
+/* named to match the *-offline.html rule in .gitignore, since it is plaintext too */
+const PREVIEW = join(ROOT, 'preview-offline.html');
 
 /* The blob sits on its own line as:  var BLOB="....";  */
 const BLOB_LINE = /^var BLOB="([^"]*)";$/m;
@@ -126,13 +129,63 @@ async function cmdEncrypt() {
   console.log(`Previous version saved as ${SHELL}.bak`);
 }
 
+/* Build a browsable copy of the plaintext, without touching the passphrase.
+   The shell normally supplies the <head> and a block of mobile CSS at unlock
+   time, so this reassembles the page the same way boot() does — otherwise the
+   preview would be missing the viewport tag and the touch-sized inputs, and
+   would not match what the phone actually shows. */
+function cmdPreview() {
+  if (!existsSync(PLAIN)) throw new Error(`${PLAIN} not found. Run 'decrypt' first.`);
+  const html = readFileSync(PLAIN, 'utf8');
+  const shell = readFileSync(SHELL, 'utf8');
+
+  const end = html.indexOf('</' + 'style>');
+  if (end < 0) throw new Error('No </style> found in the plaintext; cannot split head from body.');
+  let head = html.slice(0, end + 8);
+  const body = html.slice(end + 8);
+
+  /* label the tab so a preview is never mistaken for the real thing */
+  head = head.replace(/<title>([\s\S]*?)<\/title>/, '<title>PREVIEW · $1</title>');
+
+  /* lift the mobile overrides out of the shell so this cannot drift from it */
+  const m = shell.match(/'<style>@media \(max-width:760px\)\{[\s\S]*?<\/style>'\);/);
+  const mobile = m
+    ? m[0].replace(/^'/, '').replace(/'\);$/, '').replace(/' \+\s*'/g, '')
+    : '';
+  if (!m) console.warn('Warning: could not find the mobile CSS in index.html; preview omits it.');
+
+  writeFileSync(PREVIEW, [
+    '<!doctype html>',
+    '<html lang="en">',
+    '<head>',
+    '<meta charset="utf-8">',
+    '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">',
+    '<meta name="color-scheme" content="light dark">',
+    head,
+    mobile,
+    '</head>',
+    '<body>',
+    body,
+    '</body>',
+    '</html>',
+  ].join('\n'), 'utf8');
+
+  console.log('Wrote ' + PREVIEW);
+  console.log('Open it in your browser:');
+  console.log('  file:///' + PREVIEW.replace(/\\/g, '/'));
+  console.log('This is plaintext and gitignored. Delete it when you are done.');
+}
+
 /* Only run the CLI when invoked directly, so tests can import the helpers. */
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const cmd = process.argv[2];
-  const commands = { decrypt: cmdDecrypt, encrypt: cmdEncrypt };
+  const commands = { decrypt: cmdDecrypt, preview: cmdPreview, encrypt: cmdEncrypt };
   if (!commands[cmd]) {
-    console.error('Usage: node tools/plan.mjs <decrypt|encrypt>');
+    console.error('Usage: node tools/plan.mjs <decrypt|preview|encrypt>');
     process.exit(1);
   }
-  commands[cmd]().catch((err) => { console.error(err.message); process.exit(1); });
+  /* preview is synchronous, the other two are not — normalise before catching */
+  Promise.resolve()
+    .then(commands[cmd])
+    .catch((err) => { console.error(err.message); process.exit(1); });
 }
