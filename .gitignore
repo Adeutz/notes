@@ -7,5 +7,11 @@
 mortgage-plan-offline.html
 *-offline.html
 index.html.bak
+
+# The model is plaintext: tax table, take-home, living costs, the payoff.
+# It is only ever read by the tools, never shipped.
+model.cjs
+_model.cjs
+*.cjs
 .DS_Store
 Thumbs.db

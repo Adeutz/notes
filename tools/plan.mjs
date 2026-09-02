@@ -163,6 +163,10 @@ function cmdPreview() {
     '<meta name="color-scheme" content="light dark">',
     head,
     mobile,
+    /* mirrors the pre-paint theme step in the shell's boot(), so a preview
+       does not flash the system theme before switching to the saved one */
+    '<script>try{var t=localStorage.getItem("mortgagePlan.theme");'
+      + 'if(t==="dark"||t==="light")document.documentElement.setAttribute("data-theme",t);}catch(e){}<\/script>',
     '</head>',
     '<body>',
     body,

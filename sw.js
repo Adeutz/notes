@@ -1,6 +1,6 @@
 /* Bump this whenever the app changes. A new service worker only installs when
    this file's bytes change, and installing is what clears the old cache. */
-const CACHE = 'plan-v2';
+const CACHE = 'plan-v4';
 const FILES = ['./', './index.html', './manifest.webmanifest', './icon-180.png', './icon-512.png'];
 
 self.addEventListener('install', e => {
