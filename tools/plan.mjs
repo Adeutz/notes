@@ -2,9 +2,9 @@
 /*
  * plan.mjs — open and re-seal the encrypted plan.
  *
- *   node tools/plan.mjs decrypt   -> index.html  ->  mortgage-plan-offline.html
+ *   node tools/plan.mjs decrypt   -> index.html  ->  plan-offline.html
  *   node tools/plan.mjs preview   -> a browsable copy, no passphrase needed
- *   node tools/plan.mjs encrypt   -> mortgage-plan-offline.html  ->  index.html
+ *   node tools/plan.mjs encrypt   -> plan-offline.html  ->  index.html
  *
  * The passphrase is typed at the prompt and never written to disk, never
  * passed as an argument (arguments show up in shell history), and never
@@ -25,7 +25,7 @@ import readline from 'node:readline';
 const ITER = 250000;
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const SHELL = join(ROOT, 'index.html');
-const PLAIN = join(ROOT, 'mortgage-plan-offline.html');
+const PLAIN = join(ROOT, 'plan-offline.html');
 /* named to match the *-offline.html rule in .gitignore, since it is plaintext too */
 const PREVIEW = join(ROOT, 'preview-offline.html');
 
@@ -165,7 +165,7 @@ function cmdPreview() {
     mobile,
     /* mirrors the pre-paint theme step in the shell's boot(), so a preview
        does not flash the system theme before switching to the saved one */
-    '<script>try{var t=localStorage.getItem("mortgagePlan.theme");'
+    '<script>try{var t=localStorage.getItem("ui.theme");'
       + 'if(t==="dark"||t==="light")document.documentElement.setAttribute("data-theme",t);}catch(e){}<\/script>',
     '</head>',
     '<body>',

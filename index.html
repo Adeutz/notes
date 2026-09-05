@@ -72,13 +72,18 @@ button.big{font-size:16px;padding:16px;margin-top:0}
        still a key in hand to hand over to the passkey. -->
   <div class="card" id="offer" hidden>
     <h2 id="offerH">Skip the typing next time?</h2>
-    <p id="offerP">Your iPhone can keep this plan's key inside a passkey, guarded by
-      Face&nbsp;ID. The key never touches ordinary browser storage, and Apple cannot
-      read it either.</p>
+    <p id="offerP">This device can remember the key, so the plan opens straight up.
+      The passphrase itself is never stored &mdash; only the key it unlocks, and in a
+      form no script can read back out. Anyone who can unlock this phone could then
+      open the plan, which is the trade.</p>
     <div class="row">
-      <button id="setup" type="button">Set up Face&nbsp;ID</button>
+      <button id="setup" type="button">Remember this device</button>
       <button id="skip" class="sec" type="button">Not now</button>
     </div>
+    <p id="bioAlt" hidden style="margin:14px 0 0;font-size:13px">Or
+      <button id="setupbio" class="link" type="button">guard it with Face&nbsp;ID
+      instead</button> &mdash; stronger, but it needs iCloud Keychain and does not
+      always work from a Home Screen app.</p>
     <div class="note" id="offerErr" hidden></div>
   </div>
 
@@ -94,10 +99,13 @@ var BLOB="0FYbtw8R04bwln7K2cPhr6vch5ohQgyDo2u4Diy7VtpmIcY+U0nKvvB5st/Gza/fl6btm/
 var ITER=250000;
 var DB='plan', STORE='k', KEYID='deviceKey';
 /* Slot beside the device key holding {id, key} for tracker sync. Neutral
-   names again: this file is public, so nothing here may hint at what the
-   blob contains. The Worker at this address only ever receives ciphertext. */
+   names again: this file is public, so nothing here may hint at what the blob
+   contains - which is also why the sync server's address is NOT here. A
+   workers.dev subdomain carries the account name it was created under, and a
+   name is exactly the sort of thing this file must not disclose. The shell
+   derives the credentials; the plan, inside the ciphertext, knows where to
+   send them. */
 var SYNCID='syncSlot';
-var SYNC_URL='https://plan-sync.alexjoeldeutz.workers.dev';
 
 /* These names are deliberately bland. This file is published in the clear, so
    nothing stored under them may hint at what the encrypted blob is about.
@@ -207,7 +215,7 @@ async function syncAttach(pass){
     }
   } catch(e){ syn = null; }
   if (syn && syn.id && syn.key)
-    window.PLAN_SYNC = {id:syn.id, key:syn.key, url:SYNC_URL};
+    window.PLAN_SYNC = {id:syn.id, key:syn.key};
 }
 
 function deriveKey(pass, salt, extractable){
@@ -389,41 +397,55 @@ $('f').addEventListener('submit', async function(e){
    only moment this page holds a key worth handing to the passkey. */
 async function offer(){
   if (ls(K_SEEN) === 'no') return open_();
+  /* No IndexedDB means nowhere to keep the key, and Face ID alone is too
+     unreliable a thing to hang the whole offer on - so there is nothing to
+     offer and the plan just opens. */
+  if (!window.indexedDB) return open_();
+
+  /* Face ID is now the alternative rather than the headline. It is genuinely
+     stronger, but it fails in ways this page cannot detect in advance - a
+     Home Screen web app, iCloud Keychain switched off, or a third-party
+     password manager holding the passkey will each break it - and when it
+     did, the simpler option was never offered at all. */
   useBio = await bioReady();
-  if (!useBio){
-    if (!window.indexedDB) return open_();
-    $('offerP').textContent = 'This iPhone will not do Face ID for web pages, so ' +
-      'the next best thing is to let this device remember the key. Anyone who ' +
-      'can unlock your phone could then open the plan without being asked.';
-    $('setup').textContent = 'Remember this device';
-  }
+  $('bioAlt').hidden = !useBio;
+
   $('intro').hidden = true; $('f').hidden = true; $('bioBox').hidden = true;
   $('offer').hidden = false;
 }
 
-$('setup').addEventListener('click', async function(){
-  var s = $('setup'), note = $('offerErr'), label = s.innerHTML;
-  s.disabled = true; $('skip').disabled = true; note.hidden = true;
-  s.textContent = 'Working…';
-  try {
-    var salt = b64(BLOB).slice(0,16);
-    if (useBio){
-      /* an extractable twin of the unlock key, made only to be exported into
-         the passkey and wiped a line later */
-      var ek = await deriveKey(livePass, salt, true);
-      var bytes = new Uint8Array(await crypto.subtle.exportKey('raw', ek));
-      await bioRegister(bytes);
-      bytes.fill(0);
-      try { await keyDel(); }catch(e){}  /* the weaker copy is redundant now */
-    } else {
-      await keyPut(await deriveKey(livePass, salt, false));
-    }
-    open_();
-  } catch(ex){
+/* Shared by both buttons: run the setup, and on failure put the screen back
+   the way it was with a reason rather than a dead end. */
+async function trySetup(btn, work){
+  var note = $('offerErr'), label = btn.innerHTML;
+  btn.disabled = true; $('skip').disabled = true; note.hidden = true;
+  btn.textContent = 'Working…';
+  try { await work(); open_(); }
+  catch(ex){
     note.textContent = why(ex, 'It did not work.');
     note.hidden = false;
-    s.disabled = false; $('skip').disabled = false; s.innerHTML = label;
+    btn.disabled = false; $('skip').disabled = false; btn.innerHTML = label;
   }
+}
+
+$('setup').addEventListener('click', function(){
+  trySetup($('setup'), async function(){
+    /* Non-extractable on purpose: the key can decrypt the plan but no script,
+       and no inspector, can read the raw bytes or the passphrase back out. */
+    await keyPut(await deriveKey(livePass, b64(BLOB).slice(0,16), false));
+  });
+});
+
+$('setupbio').addEventListener('click', function(){
+  trySetup($('setupbio'), async function(){
+    /* an extractable twin of the unlock key, made only to be exported into
+       the passkey and wiped a line later */
+    var ek = await deriveKey(livePass, b64(BLOB).slice(0,16), true);
+    var bytes = new Uint8Array(await crypto.subtle.exportKey('raw', ek));
+    await bioRegister(bytes);
+    bytes.fill(0);
+    try { await keyDel(); }catch(e){}    /* the weaker copy is redundant now */
+  });
 });
 
 $('skip').addEventListener('click', function(){ lsSet(K_SEEN,'no'); open_(); });

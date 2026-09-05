@@ -55,7 +55,7 @@ The code says `env.PLAN`. Cloudflare only knows what `PLAN` means if you tell it
 
 On the Worker's overview page there is an address like:
 
-    https://plan-sync.alexjoeldeutz.workers.dev
+    https://plan-sync.YOUR-SUBDOMAIN.workers.dev
 
 `SOMETHING` is a subdomain Cloudflare picked for your account. Copy the whole
 address and hand it back to me — that is all I need to wire up the page.
@@ -64,7 +64,7 @@ address and hand it back to me — that is all I need to wire up the page.
 
 Visit this in a browser, using your own address:
 
-    https://plan-sync.alexjoeldeutz.workers.dev/s/00000000000000000000000000000000
+    https://plan-sync.YOUR-SUBDOMAIN.workers.dev/s/00000000000000000000000000000000
 
 You should see **nothing stored** on a white page. That is the correct answer —
 it means the Worker ran, found the storage box, and truthfully reported that the
@@ -95,3 +95,18 @@ plan stays exactly where it is — keep using it now and then.
 
 100,000 Worker requests and 100,000 KV reads per day, 1,000 KV writes per day.
 You will use a handful per month.
+
+---
+
+## A note on this file
+
+The Worker address is written as `YOUR-SUBDOMAIN` above rather than the real one.
+A `workers.dev` address contains the Cloudflare account name it was created
+under, and this repository is public — so the real address is deliberately kept
+out of it, and out of the app's unencrypted shell. It lives inside the encrypted
+plan, where reading it requires the passphrase anyway.
+
+Nothing breaks if the address leaks: the Worker only ever holds ciphertext, and
+the sync id needed to address a blob is 128 bits derived from your passphrase.
+It is kept quiet for the same reason the app's key names are neutral — a public
+file should not say who you are or what the blob is about.
