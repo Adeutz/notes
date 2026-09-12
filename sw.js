@@ -1,10 +1,14 @@
 /* Bump this whenever the app changes. A new service worker only installs when
    this file's bytes change, and installing is what clears the old cache. */
-const CACHE = 'plan-v6';
+const CACHE = 'plan-v7';
 const FILES = ['./', './index.html', './manifest.webmanifest', './icon-180.png', './icon-512.png'];
 
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)).then(() => self.skipWaiting()));
+  /* cache:'reload' so the install copy comes from the server, not from
+     whatever the browser's own HTTP cache still holds of the previous seal */
+  e.waitUntil(caches.open(CACHE)
+    .then(c => c.addAll(FILES.map(f => new Request(f, {cache: 'reload'}))))
+    .then(() => self.skipWaiting()));
 });
 self.addEventListener('activate', e => {
   e.waitUntil(caches.keys()
@@ -15,9 +19,16 @@ self.addEventListener('activate', e => {
 /* The page itself is fetched network-first, so a re-published plan actually
    arrives instead of the cached copy being served forever. The cache is the
    fallback, and it wins after three seconds — with no signal, or on a bad
-   connection, the app still opens instantly and offline. */
+   connection, the app still opens instantly and offline.
+
+   cache:'no-cache' matters: GitHub Pages marks the page fresh for ten minutes,
+   and a plain fetch() would take that copy from the browser's HTTP cache
+   without asking the server. That is how a freshly re-sealed plan can keep
+   failing "wrong passphrase" on the phone — it is still opening the previous
+   seal. no-cache makes every load a conditional request: the server answers
+   304 if nothing changed, or the new page if it has. */
 function pageResponse(req) {
-  const net = fetch(req).then(res => {
+  const net = fetch(req.url, {cache: 'no-cache', credentials: 'same-origin'}).then(res => {
     caches.open(CACHE).then(c => c.put('./index.html', res.clone())).catch(() => {});
     return res;
   });
