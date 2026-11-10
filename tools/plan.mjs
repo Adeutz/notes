@@ -2,9 +2,22 @@
 /*
  * plan.mjs — open and re-seal the encrypted plan.
  *
- *   node tools/plan.mjs decrypt   -> index.html  ->  plan-offline.html
- *   node tools/plan.mjs preview   -> a browsable copy, no passphrase needed
- *   node tools/plan.mjs encrypt   -> plan-offline.html  ->  index.html
+ *   node tools/plan.mjs decrypt        -> index.html  ->  plan-offline.html
+ *   node tools/plan.mjs preview        -> a browsable copy, no passphrase needed
+ *   node tools/plan.mjs encrypt        -> plan-offline.html  ->  index.html
+ *                                         (same passphrase as now; devices stay unlocked)
+ *   node tools/plan.mjs encrypt --new  -> the same, under a NEW passphrase
+ *                                         (every device asks once for the new one)
+ *
+ * Why plain `encrypt` keeps the salt: a device that has been unlocked once
+ * remembers the KEY, not the passphrase, and the key is made from passphrase +
+ * salt. Keep both the same and the key is the same, so every phone keeps
+ * opening the plan through every update. A fresh salt on each seal - what this
+ * tool used to do - silently logged every device out each time.
+ *
+ * Reusing the salt is safe. The salt only has to differ between DIFFERENT
+ * passphrases' keys; it is the iv that must never repeat under one key, and the
+ * iv is still brand new random bytes on every seal.
  *
  * The passphrase is typed at the prompt and never written to disk, never
  * passed as an argument (arguments show up in shell history), and never
@@ -33,7 +46,7 @@ const PREVIEW = join(ROOT, 'preview-offline.html');
 const BLOB_LINE = /^var BLOB="([^"]*)";$/m;
 
 /* Read a passphrase without echoing it to the terminal. */
-function askSecret(promptText) {
+export function askSecret(promptText) {
   return new Promise((resolve) => {
     const rl = readline.createInterface({
       input: process.stdin, output: process.stdout, terminal: true,
@@ -95,22 +108,44 @@ async function cmdDecrypt() {
   console.log('This file is plaintext and gitignored. Edit it, then run: node tools/plan.mjs encrypt');
 }
 
-async function cmdEncrypt() {
+async function cmdEncrypt(isNew) {
   if (!existsSync(PLAIN)) throw new Error(`${PLAIN} not found. Run 'decrypt' first.`);
   const html = readFileSync(PLAIN, 'utf8');
   const shell = readFileSync(SHELL, 'utf8');
-  if (!BLOB_LINE.test(shell)) throw new Error(`No 'var BLOB="..."' line found in ${SHELL}`);
+  const current = shell.match(BLOB_LINE);
+  if (!current) throw new Error(`No 'var BLOB="..."' line found in ${SHELL}`);
 
-  const passphrase = await askSecret('Passphrase: ');
-  const confirm = await askSecret('Confirm:    ');
-  if (passphrase !== confirm) {
-    console.error('Passphrases do not match. Nothing was written.');
-    process.exitCode = 1;
-    return;
+  let passphrase, salt;
+  if (isNew) {
+    passphrase = await askSecret('NEW passphrase: ');
+    const confirm = await askSecret('Confirm:        ');
+    if (passphrase !== confirm) {
+      console.error('Passphrases do not match. Nothing was written.');
+      process.exitCode = 1;
+      return;
+    }
+    if (!passphrase) {
+      console.error('An empty passphrase would lock nothing. Nothing was written.');
+      process.exitCode = 1;
+      return;
+    }
+    salt = crypto.getRandomValues(new Uint8Array(16));
+  } else {
+    /* Typed once, then proven: it has to open the plan that is published now.
+       That doubles as the typo check, since a typo cannot open it. */
+    passphrase = await askSecret('Passphrase: ');
+    try {
+      await decryptBlob(current[1], passphrase);
+    } catch {
+      console.error('That passphrase does not open the plan that is published now. Nothing was written.');
+      console.error('To lock it under a different passphrase on purpose, run:  node tools/plan.mjs encrypt --new');
+      process.exitCode = 1;
+      return;
+    }
+    salt = new Uint8Array(Buffer.from(current[1], 'base64').subarray(0, 16));
   }
 
-  const salt = crypto.getRandomValues(new Uint8Array(16));
-  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const iv = crypto.getRandomValues(new Uint8Array(12));   /* always fresh - see the top of this file */
   const key = await deriveKey(passphrase, salt, ['encrypt', 'decrypt']);
   const cipher = await crypto.subtle.encrypt(
     { name: 'AES-GCM', iv }, key, new TextEncoder().encode(html),
@@ -127,6 +162,12 @@ async function cmdEncrypt() {
   writeFileSync(SHELL, shell.replace(BLOB_LINE, `var BLOB="${b64}";`), 'utf8');
   console.log(`Sealed ${html.length.toLocaleString()} chars into ${SHELL}.`);
   console.log(`Previous version saved as ${SHELL}.bak`);
+  if (isNew) {
+    console.log('NEW passphrase. Each device asks for it once, then remembers it.');
+    console.log('Save it in your password manager now, before you forget it.');
+  } else {
+    console.log('Same passphrase and salt as before: devices that are already unlocked stay unlocked.');
+  }
 }
 
 /* Build a browsable copy of the plaintext, without touching the passphrase.
@@ -183,9 +224,12 @@ function cmdPreview() {
 /* Only run the CLI when invoked directly, so tests can import the helpers. */
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const cmd = process.argv[2];
-  const commands = { decrypt: cmdDecrypt, preview: cmdPreview, encrypt: cmdEncrypt };
-  if (!commands[cmd]) {
-    console.error('Usage: node tools/plan.mjs <decrypt|preview|encrypt>');
+  const isNew = process.argv.includes('--new');
+  const commands = {
+    decrypt: cmdDecrypt, preview: cmdPreview, encrypt: () => cmdEncrypt(isNew),
+  };
+  if (!commands[cmd] || (isNew && cmd !== 'encrypt')) {
+    console.error('Usage: node tools/plan.mjs <decrypt|preview|encrypt [--new]>');
     process.exit(1);
   }
   /* preview is synchronous, the other two are not — normalise before catching */

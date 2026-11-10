@@ -12,5 +12,18 @@ index.html.bak
 model.cjs
 _model.cjs
 *.cjs
+
+# Working dumps and exports. cfgdump.txt held the live mortgage balance, cash
+# and VTI figures in plaintext while sitting untracked-but-not-ignored, which
+# is one `git add -A` away from being public. Anything of this shape is data,
+# not app, so it is excluded by shape rather than by name.
+cfgdump.txt
+*dump*.txt
+*.json
+!manifest.webmanifest
+notes.txt
+scratch*
+*.bak
+
 .DS_Store
 Thumbs.db
